@@ -1,0 +1,17 @@
+# Inherits all runtime dependencies
+-r requirements.txt
+
+# Coverage reporting (referenced in pytest.ini [coverage:run])
+pytest-cov>=5.0
+
+# Realistic test data generation (faker logger already suppressed in conftest.py)
+faker>=25.0
+
+# Code formatting
+black>=24.0
+
+# Linting (faster, replaces flake8 + isort)
+ruff>=0.4
+
+# Static type checking (type annotations are used throughout the codebase)
+mypy>=1.10

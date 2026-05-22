@@ -1,0 +1,14 @@
+# Core test runner
+pytest>=9.0
+
+# Parallel test execution
+pytest-xdist>=3.8
+
+# Browser automation
+selenium>=4.40
+
+# API calls (auth_client, admin_client)
+requests>=2.32
+
+# .env file support
+python-dotenv>=1.0
