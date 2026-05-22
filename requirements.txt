@@ -12,3 +12,5 @@ requests>=2.32
 
 # .env file support
 python-dotenv>=1.0
+
+faker

@@ -1,180 +1,203 @@
 """
-Configuration management for the test framework
+Configuration management for the test framework.
 
-Priority: CLI > Environment Variables > Config File > Defaults
+Priority chain (highest to lowest):
+    1. CLI flags       --browser, --url, --headless, etc.
+    2. Env variables   TEST_BASE_URL, TEST_BROWSER, TEST_USER_EMAIL, etc.
+    3. Defaults        values defined on the dataclass fields below
+
+Typical usage:
+    # From within a pytest fixture (reads CLI + env):
+    config = TestConfig.from_pytest_config(request.config)
+
+    # From outside pytest (reads env only — useful for standalone scripts):
+    config = TestConfig.from_env()
 """
+
 import os
 import logging
 from dataclasses import dataclass
 from typing import Optional
+
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class TestConfig:
-    """Central configuration for test execution with built-in validation.
+    """
+    Central configuration object for a test session.
 
-    Validates configuration values immediately upon creation to fail fast.
+    Validates all values immediately on creation via __post_init__ so that
+    bad config surfaces as a clear error before any test runs, not as a
+    confusing mid-run failure.
 
     Examples:
         >>> config = TestConfig(browser="chrome", headless=True)
         >>> config.implicit_wait
         10
 
-        >>> # Invalid config fails immediately:
         >>> config = TestConfig(implicit_wait=-5)
         ValueError: implicit_wait must be positive, got -5
 
     Raises:
-        ValueError: If any timeout value is not positive
-        TypeError: If browser is not a string or headless is not boolean
-     """
+        ValueError: If any timeout value is not positive, or a path
+                    cannot be created.
+        TypeError:  If browser is not a string or headless is not boolean.
+    """
 
-    # Test user credentials
-    test_user_email: str = "user1@test.com"
-    test_user_password: str = "password123"
-
-    # Browser settings
+    # --- Browser ---
     browser: str = "chrome"
     headless: bool = False
 
-    # URL settings
-    base_url: str = "http://localhost:3000/"
+    # --- URLs ---
+    base_url: str = "http://localhost:3000"
     api_url: str = "http://localhost:3001"
 
-    # Timeout settings
+    # --- Timeouts ---
     implicit_wait: int = 10
     explicit_wait: int = 10
     page_load_timeout: int = 60
 
-    # Screenshot settings
+    # --- Screenshots ---
     screenshot_on_failure: bool = True
-    save_screenshots: bool = False
+    save_screenshots: bool = True
     screenshot_path: str = "screenshots"
 
-    # Logging settings
-    log_level: str = "DEBUG"
+    # --- Logging ---
+    log_level: str = "INFO"
     log_file: str = "logs/test_execution.log"
 
-    # Remote execution settings
+    # --- Remote / Grid execution ---
     remote_execution: bool = False
     remote_url: Optional[str] = None
 
+    # --- Test user credentials ---
+    # Defaults match the seed data. Override via TEST_USER_EMAIL /
+    # TEST_USER_PASSWORD env vars so no credentials live in code for
+    # non-default environments.
+    test_user_email: str = "user1@test.com"
+    test_user_password: str = "password123"
+
+    # ---------------------------------------------------------------------------
+    # Validation
+    # ---------------------------------------------------------------------------
+
     def __post_init__(self):
-        """Validate configuration values after initialization.
-
-        This runs automatically after __init__ completes.
-        Ensures the test session fails fast with clear error messages
-        """
-        # Validate types
+        """Runs automatically after __init__. Validates all fields eagerly."""
         self._validate_types()
-
-        # Validate browser is supported
         self._validate_browser()
-
-        # Validate timeouts are positive
         self._validate_timeouts()
-
-        # Validate paths exist or can be created
         self._validate_paths()
 
     def _validate_browser(self):
-        """Validate browser is supported by checking against browser_config."""
+        """Validate browser name against the supported list in browser_config."""
         from config.browser_config import get_supported_browsers
 
-        # Normalize browser name to lowercase
-        browser_lower = self.browser.lower()
-
-        # Get a list of supported browsers
-        supported_browsers = get_supported_browsers()
-
-        # Check if the browser is in the supported list
-        if browser_lower not in supported_browsers:
+        supported = get_supported_browsers()
+        if self.browser.lower() not in supported:
             raise ValueError(
-                f"Invalid browser '{self.browser}' in configuration. "
-                f"Supported browsers: {supported_browsers}"
+                f"Unsupported browser '{self.browser}'. "
+                f"Supported: {supported}"
             )
 
     def _validate_timeouts(self):
-        """Validate all timeout values are positive"""
-        timeout_fields = {
-            'implicit_wait': self.implicit_wait,
-            'explicit_wait': self.explicit_wait,
-            'page_load_timeout': self.page_load_timeout,
-        }
-        for field_name, value in timeout_fields.items():
+        """All timeout values must be positive integers."""
+        for field_name, value in {
+            "implicit_wait": self.implicit_wait,
+            "explicit_wait": self.explicit_wait,
+            "page_load_timeout": self.page_load_timeout,
+        }.items():
             if value <= 0:
                 raise ValueError(
-                    f"{field_name} must be positive, got {value}"
+                    f"{field_name} must be a positive integer, got {value}"
                 )
 
     def _validate_types(self):
-        """Validate field types are correct"""
+        """Guard against common misconfiguration from env-var parsing."""
         if not isinstance(self.browser, str):
             raise TypeError(
-                f"Browser must be string, got {type(self.browser).__name__}"
+                f"browser must be a string, got {type(self.browser).__name__}"
             )
         if not isinstance(self.headless, bool):
             raise TypeError(
-                f"Headless must be boolean, got {type(self.headless).__name__}"
+                f"headless must be a boolean, got {type(self.headless).__name__}"
             )
         if not isinstance(self.base_url, str):
             raise TypeError(
-                f"Base URL must be string, got {type(self.base_url).__name__}"
+                f"base_url must be a string, got {type(self.base_url).__name__}"
             )
 
     def _validate_paths(self):
-        """Validate screenshot and log paths can be created"""
-        for path_name, path_value in [
-            ('screenshot_path', self.screenshot_path),
-            ('log_file', os.path.dirname(self.log_file))
+        """Create screenshot and log directories if they don't exist."""
+        for label, path in [
+            ("screenshot_path", self.screenshot_path),
+            ("log_file directory", os.path.dirname(self.log_file)),
         ]:
-            if path_value and not os.path.exists(path_value):
+            if path and not os.path.exists(path):
                 try:
-                    os.makedirs(path_value, exist_ok=True)
-                    logger.debug(f"Created directory {path_value}")
+                    os.makedirs(path, exist_ok=True)
+                    logger.debug(f"Created {label} directory: {path}")
                 except OSError as e:
                     raise ValueError(
-                        f"Cannot create {path_name} directory '{path_value}: {e}"
+                        f"Cannot create {label} '{path}': {e}"
                     ) from None
+
+    # ---------------------------------------------------------------------------
+    # Factory methods
+    # ---------------------------------------------------------------------------
 
     @classmethod
     def from_pytest_config(cls, config):
-        """ Create a TestConfig object from pytest config """
+        """
+        Build a TestConfig from pytest's parsed CLI options and env vars.
+
+        Called from the test_config fixture. Uses dest= names (no dashes)
+        for getoption() calls — see conftest.pytest_addoption for the mapping
+        between flag names and dest names.
+
+        Priority per field:
+            URL       — --url CLI flag → TEST_BASE_URL env var → class default
+            others    — CLI flag → class default (env vars via from_env() fallback)
+        """
         hub_url = os.getenv("SELENIUM_HUB_URL")
-        # Priority 1: CLI Argument (--url)
-        cli_url = config.getoption("--url")
 
-        # Priority 2: Environment Variable (Docker Compose)
-        env_url = os.getenv("TEST_BASE_URL")
+        # URL gets a three-level fallback because it's the most likely value
+        # to differ between local, CI, and staging environments.
+        cli_url = config.getoption("url")           # dest="url" in addoption
+        env_url = os.getenv("TEST_BASE_URL", "")
+        final_url = cli_url or env_url or cls.base_url  # was: cli_url or cli_url
 
-        #Fallback chain
-        final_url = cli_url or env_url or cls.base_url
         return cls(
-            browser=config.getoption("--browser", default=cls.browser),
-            headless=config.getoption("--headless", default=cls.headless),
+            browser=config.getoption("browser"),                          # dest="browser"
+            headless=config.getoption("headless"),                        # dest="headless"
             base_url=final_url,
-            save_screenshots=config.getoption("save_screenshots", default=cls.save_screenshots),
-            screenshot_path=config.getoption("screenshot_path", default=cls.screenshot_path),
+            save_screenshots=config.getoption("save_screenshots"),        # dest="save_screenshots"
+            screenshot_path=config.getoption("screenshot_path"),          # dest="screenshot_path"
             remote_url=hub_url,
-            remote_execution=bool(hub_url)
+            remote_execution=bool(hub_url),
+            test_user_email=os.getenv("TEST_USER_EMAIL", cls.test_user_email),
+            test_user_password=os.getenv("TEST_USER_PASSWORD", cls.test_user_password),
         )
 
     @classmethod
     def from_env(cls):
-        """ Create a TestConfig object from environment variables """
+        """
+        Build a TestConfig purely from environment variables.
 
+        Used outside of pytest — standalone scripts, health checks, or
+        any context where request.config is not available.
+        """
         hub_url = os.getenv("SELENIUM_HUB_URL")
 
         return cls(
-            test_user_email=os.getenv("TEST_USER_EMAIL", cls.test_user_email),
-            test_user_password=os.getenv("TEST_USER_PASSWORD", cls.test_user_password),
             browser=os.getenv("TEST_BROWSER", cls.browser),
             headless=os.getenv("TEST_HEADLESS", "false").lower() == "true",
             base_url=os.getenv("TEST_BASE_URL", cls.base_url),
+            api_url=os.getenv("TEST_API_URL", cls.api_url),
             implicit_wait=int(os.getenv("TEST_IMPLICIT_WAIT", str(cls.implicit_wait))),
             explicit_wait=int(os.getenv("TEST_EXPLICIT_WAIT", str(cls.explicit_wait))),
-            remote_url = hub_url,
-            remote_execution=bool(hub_url)
+            remote_url=hub_url,
+            remote_execution=bool(hub_url),
+            test_user_email=os.getenv("TEST_USER_EMAIL", cls.test_user_email),
+            test_user_password=os.getenv("TEST_USER_PASSWORD", cls.test_user_password),
         )
-
-
