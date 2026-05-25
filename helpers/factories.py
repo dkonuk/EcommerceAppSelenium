@@ -21,10 +21,10 @@ Note on faker:
     Move it when requirements.txt is next updated.
 
 Contents:
-    SeedData           — constants mirroring backend/scripts/seed.js
-    UserFactory        — registration and login payloads
-    OrderFactory       — checkout / order creation payloads
-    ReviewFactory      — product review payloads
+    SeedData             — constants mirroring the running app's seed data
+    UserFactory          — registration and login payloads
+    OrderFactory         — checkout / order creation payloads
+    ReviewFactory        — product review payloads
     ProductSearchFactory — query parameters for GET /api/products
 """
 
@@ -42,14 +42,14 @@ _fake = Faker()
 
 class SeedData:
     """
-    Known values produced by backend/scripts/seed.js.
+    Known values produced by the running application's seed endpoint.
 
-    Use these constants when a test deliberately targets seeded data —
-    for example, an API test that verifies a specific product exists, or
-    an auth test that logs in as the admin.
+    These constants reflect what GET /api/products/categories/all and
+    the admin seed endpoint actually produce — NOT what seed.js says on
+    disk. If the two ever differ, the running app wins.
 
-    If seed.js changes, update this class. Having one canonical reference
-    means a seed change produces a single diff, not a grep across the suite.
+    If the seed data changes, update this class first. A single diff here
+    is better than a grep across the whole suite.
     """
 
     # --- Credentials ---
@@ -69,49 +69,37 @@ class SeedData:
             )
         return f"user{n}@test.com"
 
-    # --- Categories (matches seed.js category list exactly) ---
+    # --- Categories ---
+    # 10 flat (no parent-child hierarchy) categories as returned by the
+    # running seed. Verified against GET /api/products/categories/all.
     CATEGORIES = [
-        "Electronics",
-        "Laptops",
-        "Smartphones",
-        "Clothing",
-        "Men",
-        "Women",
+        "Automotive",
+        "Beauty",
         "Books",
-        "Fiction",
-        "Non-Fiction",
+        "Clothing",
+        "Electronics",
+        "Food",
+        "Health",
         "Home & Garden",
         "Sports",
         "Toys",
     ]
 
-    # --- Named products (the hand-crafted ones, not the generic Laptop 1…N) ---
-    NAMED_PRODUCTS = [
-        'MacBook Pro 16"',
-        "Dell XPS 13",
-        "iPhone 15 Pro",
-        "Samsung Galaxy S24",
-        "Sony WH-1000XM5",
-        "Classic Cotton T-Shirt",
-        "Slim Fit Jeans",
-        "Summer Dress",
-        "Yoga Pants",
-        "The Great Novel",
-        "Science Made Simple",
-        "Cooking Mastery",
-        "Ergonomic Office Chair",
-        "LED Desk Lamp",
-        "Plant Pot Set",
-        "Yoga Mat",
-        "Dumbbells Set",
-        "Running Shoes",
-        "Building Blocks Set",
-        "Board Game Collection",
+    # --- Search terms ---
+    # Category names are the safest search terms — guaranteed to appear in
+    # product names or descriptions since products are seeded per category.
+    SEARCH_TERMS = [
+        "Electronics",
+        "Clothing",
+        "Books",
+        "Sports",
+        "Toys",
+        "Automotive",
+        "Beauty",
+        "Food",
+        "Health",
+        "Home",
     ]
-
-    # Prefixes used for generic products (Laptop 1..30, Phone 1..40, etc.)
-    # Useful for constructing search terms that will return results.
-    GENERIC_PRODUCT_PREFIXES = ["Laptop", "Phone", "T-Shirt", "Book", "Toy"]
 
     # --- Shipping address used in seeded orders ---
     SEED_SHIPPING_ADDRESS = "123 Test St, Test City, TC 12345"
@@ -287,30 +275,19 @@ class ProductSearchFactory:
         page      — integer >= 1
         limit     — integer >= 1
 
-    This factory generates search terms and sort options that will return
-    results against the seeded database. Tests that need an empty result
-    set should pass a nonsense search term explicitly:
-        params = ProductSearchFactory.create(search="xyzzy_no_match_12345")
+    Search terms are drawn from SeedData.SEARCH_TERMS — category names
+    guaranteed to appear in product names or descriptions.
 
     Example:
         params = ProductSearchFactory.create()
-        # {"search": "Laptop", "sortBy": "price", "order": "asc",
+        # {"search": "Electronics", "sortBy": "price", "order": "asc",
         #  "page": 1, "limit": 20}
 
         # Filter to a price range:
-        params = ProductSearchFactory.create(minPrice=10.0, maxPrice=100.0)
+        params = ProductSearchFactory.create_price_range(min_price=10.0, max_price=100.0)
     """
 
-    # Valid sort fields as declared in products.js validSortFields
     _SORT_FIELDS = ["name", "price", "created_at", "stock"]
-
-    # Search terms guaranteed to return results from the seeded database.
-    # Drawn from SeedData.GENERIC_PRODUCT_PREFIXES and named product keywords.
-    _SEARCH_TERMS = [
-        "Laptop", "Phone", "T-Shirt", "Book", "Toy",
-        "MacBook", "iPhone", "Samsung", "Sony",
-        "Yoga", "Running", "Cooking",
-    ]
 
     @classmethod
     def create(cls, **kwargs) -> dict:
@@ -321,11 +298,11 @@ class ProductSearchFactory:
             dict with keys: search, sortBy, order, page, limit
         """
         defaults = {
-            "search": random.choice(cls._SEARCH_TERMS),
+            "search": random.choice(SeedData.SEARCH_TERMS),
             "sortBy": random.choice(cls._SORT_FIELDS),
-            "order": random.choice(["asc", "desc"]),
-            "page": 1,
-            "limit": 20,
+            "order":  random.choice(["asc", "desc"]),
+            "page":   1,
+            "limit":  20,
         }
 
         return {**defaults, **kwargs}
@@ -348,7 +325,7 @@ class ProductSearchFactory:
     @classmethod
     def create_empty_result(cls, **kwargs) -> dict:
         """
-        Return params that will produce zero results from the seeded database.
+        Return params that produce zero results from the seeded database.
 
         Useful for testing empty-state UI rendering and zero-result API responses.
         """
