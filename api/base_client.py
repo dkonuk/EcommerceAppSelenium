@@ -189,13 +189,16 @@ class BaseAPIClient:
             RuntimeError: On non-2xx status codes.
         """
         if not response.ok:
+            log = logger.error if response.status_code >= 500 else logger.debug
+            log(
+                f"{response.request.method} {response.url} "
+                f"[{response.status_code}]: {response.text}"
+            )
             raise RuntimeError(
                 f"{response.request.method} {response.url} "
                 f"failed [{response.status_code}]: {response.text}"
             )
 
-        # Some endpoints return an empty body (e.g. 204 No Content).
-        # Return an empty dict rather than crashing on json() parse.
         if not response.content:
             return {}
 

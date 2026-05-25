@@ -54,8 +54,11 @@ class AuthAPIClient:
         response = self.session.post(endpoint, json=payload)
 
         if response.status_code != 201:
-            logger.error(
-                f"Registration failed for {email} | "
+            # 4xx — request problem, may be intentional in a negative test
+            # 5xx — server problem, always worth flagging louder
+            log = logger.error if response.status_code >= 500 else logger.debug
+            log(
+                f"register_user {email} | "
                 f"status={response.status_code} | "
                 f"body={response.text}"
             )
@@ -93,8 +96,9 @@ class AuthAPIClient:
         response = self.session.post(endpoint, json=payload)
 
         if response.status_code != 200:
-            logger.error(
-                f"Login failed for {email} | "
+            log = logger.error if response.status_code >= 500 else logger.debug
+            log(
+                f"get_jwt_token {email} | "
                 f"status={response.status_code} | "
                 f"body={response.text}"
             )

@@ -53,8 +53,8 @@ class SeedData:
     """
 
     # --- Credentials ---
-    ADMIN_EMAIL    = "admin@test.com"
-    ADMIN_PASSWORD = "admin123"
+    ADMIN_EMAIL    = "user1@test.com"
+    ADMIN_PASSWORD = "password123"
 
     # Users user1@test.com .. user20@test.com, all with password123
     USER_PASSWORD  = "password123"
@@ -62,7 +62,10 @@ class SeedData:
 
     @staticmethod
     def user_email(n: int) -> str:
-        """Return the seeded email for user n (1-based, 1..20)."""
+        """Return the seeded email for user n (1-based, 1..20).
+        Note: user 1 (user1@test.com) has role='admin'.
+          Use n >= 2 for tests that require a non-admin user.
+          """
         if not 1 <= n <= SeedData.USER_COUNT:
             raise ValueError(
                 f"Seeded user index must be 1–{SeedData.USER_COUNT}, got {n}"
